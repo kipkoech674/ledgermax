@@ -1,0 +1,49 @@
+services:
+  web:
+    image: python:3.12-slim
+    working_dir: /app
+    command: python -m http.server 8000 --bind 0.0.0.0
+    volumes:
+      - .:/app:ro
+    ports:
+      - "8000:8000"
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ledgerlens
+      POSTGRES_USER: ledgerlens
+      POSTGRES_PASSWORD: ledgerlens
+    ports:
+      - "5432:5432"
+    volumes:
+      - ledgerlens-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ledgerlens -d ledgerlens"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    working_dir: /app
+    command: sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8001 --reload"
+    volumes:
+      - ./backend:/app
+    environment:
+      DATABASE_URL: postgresql+psycopg://ledgerlens:ledgerlens@db:5432/ledgerlens
+      CORS_ORIGINS: http://localhost:8000,http://127.0.0.1:8000
+      JWT_SECRET: local-development-secret-change-before-deploying
+      CLAIM_ORPHANED_WORKSPACE: "true"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+    ports:
+      - "8001:8001"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  ledgerlens-data:
